@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -468,5 +469,95 @@ func TestExecute_WithEndLine(t *testing.T) {
 	}
 	if strings.Contains(result, "5|e") {
 		t.Error("line 5 should not appear")
+	}
+}
+
+func TestExecute_PagesLongLine(t *testing.T) {
+	dir := t.TempDir()
+	long := strings.Repeat("a", fileReadMaxLineBytes) + strings.Repeat("b", fileReadMaxLineBytes) + "END"
+	writeTestFile(t, dir, "min.js", "first\n"+long+"\nlast\n")
+	p := NewFileRead(&FileReader{RepoDir: dir, Mode: ModeWorkspace})
+
+	got, err := p.Execute(context.Background(), map[string]any{"file_path": "min.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, strings.Repeat("b", 10)) {
+		t.Error("first page should stop before the b run")
+	}
+	for _, want := range []string{"1|first\n", "3|last\n", "…[line 2 continues: 32771 more bytes; file_read with start_line=2, end_line=2, start_col=32769 reads the next part]"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+
+	got, err = p.Execute(context.Background(), map[string]any{
+		"file_path": "min.js", "start_line": float64(2), "end_line": float64(2), "start_col": float64(32769),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "2|"+strings.Repeat("b", fileReadMaxLineBytes)+" …[line 2 continues: 3 more bytes;") {
+		t.Errorf("second page wrong: %q", got[:80])
+	}
+
+	got, err = p.Execute(context.Background(), map[string]any{
+		"file_path": "min.js", "start_line": float64(2), "end_line": float64(2), "start_col": float64(65537),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "2|END\n") || strings.Contains(got, "continues") {
+		t.Errorf("last page wrong: %q", got)
+	}
+}
+
+func TestExecute_StartColPastLineEnd(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "s.txt", "short\n")
+	p := NewFileRead(&FileReader{RepoDir: dir, Mode: ModeWorkspace})
+
+	for _, col := range []float64{100, 1e30, math.Inf(1)} {
+		got, err := p.Execute(context.Background(), map[string]any{"file_path": "s.txt", "start_col": col})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(got, "1|\n") {
+			t.Errorf("start_col %g: expected an empty line, got %q", col, got)
+		}
+	}
+}
+
+func TestExecute_OutputLimitStopsAtLineBoundary(t *testing.T) {
+	dir := t.TempDir()
+	line := strings.Repeat("x", fileReadMaxLineBytes-10)
+	writeTestFile(t, dir, "wide.txt", strings.Repeat(line+"\n", 20))
+	p := NewFileRead(&FileReader{RepoDir: dir, Mode: ModeWorkspace})
+
+	got, err := p.Execute(context.Background(), map[string]any{"file_path": "wide.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"IS_TRUNCATED: true", "LINE_RANGE: 1-9\n", "Note: Output limit reached; continue with start_line=10."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(got, "\n10|") {
+		t.Error("line 10 should not be shown")
+	}
+}
+
+func TestExecute_PagesLongLineKeepsUTF8Intact(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "u.txt", "a"+strings.Repeat("\u00e9", fileReadMaxLineBytes)+"\n")
+	p := NewFileRead(&FileReader{RepoDir: dir, Mode: ModeWorkspace})
+
+	got, err := p.Execute(context.Background(), map[string]any{"file_path": "u.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "start_col=32768 reads") {
+		t.Errorf("cut should back off to a rune start: %q", got[len(got)-150:])
 	}
 }

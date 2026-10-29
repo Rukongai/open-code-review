@@ -9,19 +9,28 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
 	gitGrepMaxCount = 100
 	gitGrepTimeout  = 10 * time.Second
+	// Minified bundles and HTML exports put whole files on one line. Past this
+	// length a match line is shown as a window around the match instead.
+	gitGrepMaxLineBytes = 2048
+	gitGrepMatchContext = 300
 )
 
 // CodeSearchProvider performs text search across the repository using git grep.
 type CodeSearchProvider struct {
 	FileReader *FileReader
+	// Excluded reports paths the user excluded from review (rule.json exclude
+	// or --exclude); their matches are dropped so search cannot pull them back in.
+	Excluded func(path string) bool
 }
 
 func NewCodeSearch(fr *FileReader) *CodeSearchProvider { return &CodeSearchProvider{FileReader: fr} }
@@ -201,6 +210,7 @@ func (p *CodeSearchProvider) gitGrep(ctx context.Context, searchText string, cas
 	matchCount := 0
 	truncated := false
 	matchedFiles := make(map[string]bool)
+	excludedFiles := make(map[string]bool)
 	for _, line := range lines {
 		if line == "" {
 			continue
@@ -213,6 +223,10 @@ func (p *CodeSearchProvider) gitGrep(ctx context.Context, searchText string, cas
 		ln, parseErr := strconv.Atoi(parts[offset+1])
 		if parseErr != nil {
 			// Skip lines whose line-number field is not numeric.
+			continue
+		}
+		if p.Excluded != nil && p.Excluded(fname) {
+			excludedFiles[fname] = true
 			continue
 		}
 		// Count every file with a text match, including those beyond the render
@@ -232,16 +246,25 @@ func (p *CodeSearchProvider) gitGrep(ctx context.Context, searchText string, cas
 		matchCount++
 	}
 
+	if len(fileOrder) == 0 && len(excludedFiles) > 0 {
+		return fmt.Sprintf("No matches found outside excluded paths (%d excluded files matched)", len(excludedFiles)), nil
+	}
+
+	locate := matchLocator(searchText, caseSensitive, usePerlRegexp)
+
 	var sb strings.Builder
 	if truncated {
 		sb.WriteString(fmt.Sprintf("Note: Showing the first %d matches across %d matching files. Some files are partially shown or omitted entirely. Narrow file_patterns to see the rest.\n", gitGrepMaxCount, len(matchedFiles)))
+	}
+	if len(excludedFiles) > 0 {
+		sb.WriteString(fmt.Sprintf("Note: Hid matches in %d files excluded from review.\n", len(excludedFiles)))
 	}
 
 	for _, path := range fileOrder {
 		matches := fileMatches[path]
 		sb.WriteString(fmt.Sprintf("File: %s\nMatch lines: %d\n", path, len(matches)))
 		for _, m := range matches {
-			sb.WriteString(fmt.Sprintf("%d|%s\n", m.lineNum, m.content))
+			sb.WriteString(fmt.Sprintf("%d|%s\n", m.lineNum, windowMatchLine(m.content, m.lineNum, locate)))
 		}
 		sb.WriteString("\n")
 	}
@@ -251,6 +274,60 @@ func (p *CodeSearchProvider) gitGrep(ctx context.Context, searchText string, cas
 	}
 
 	return sb.String(), nil
+}
+
+// matchLocator returns a function that finds the first match of the search in
+// a line, or nil when the pattern cannot be reproduced in Go (some PCRE syntax
+// is not valid RE2); long lines then fall back to showing their start.
+func matchLocator(searchText string, caseSensitive, usePerlRegexp bool) func(string) []int {
+	pattern := searchText
+	if !usePerlRegexp {
+		pattern = regexp.QuoteMeta(searchText)
+	}
+	if !caseSensitive {
+		pattern = "(?i)" + pattern
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil
+	}
+	return re.FindStringIndex
+}
+
+// windowMatchLine shortens a match line longer than gitGrepMaxLineBytes to the
+// text around its first match, with markers saying how much was cut and how to
+// read the rest with file_read.
+func windowMatchLine(line string, lineNum int, locate func(string) []int) string {
+	if len(line) <= gitGrepMaxLineBytes {
+		return line
+	}
+	from, to := 0, gitGrepMaxLineBytes
+	if locate != nil {
+		if loc := locate(line); loc != nil {
+			from = max(loc[0]-gitGrepMatchContext, 0)
+			to = min(loc[1]+gitGrepMatchContext, len(line), from+gitGrepMaxLineBytes)
+		}
+	}
+	from = runeBoundary(line, from)
+	to = runeBoundary(line, to)
+
+	var sb strings.Builder
+	if from > 0 {
+		sb.WriteString(fmt.Sprintf("…[%d bytes before] ", from))
+	}
+	sb.WriteString(line[from:to])
+	sb.WriteString(fmt.Sprintf(" …[line is %d bytes; showing bytes %d-%d; file_read with start_line=%d, end_line=%d, start_col=%d reads from here]",
+		len(line), from+1, to, lineNum, lineNum, from+1))
+	return sb.String()
+}
+
+// runeBoundary moves i back to the start of the UTF-8 sequence it falls in, so
+// slicing at i never splits a character.
+func runeBoundary(s string, i int) int {
+	for back := 0; back < utf8.UTFMax && i > 0 && i < len(s) && !utf8.RuneStart(s[i]); back++ {
+		i--
+	}
+	return i
 }
 
 func trimGitUsage(stderr string, exitCode int) string {

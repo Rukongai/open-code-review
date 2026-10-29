@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/alibaba/open-code-review/internal/config/rules"
+	"github.com/alibaba/open-code-review/internal/tool"
 )
 
 func initTestGitRepo(t *testing.T) string {
@@ -180,8 +183,19 @@ func TestValidateReviewRefs_EmptySkipped(t *testing.T) {
 }
 
 func TestBuildToolRegistry(t *testing.T) {
-	reg := buildToolRegistry(nil, nil)
+	reg := buildToolRegistry(nil, nil, nil)
 	if reg == nil {
 		t.Fatal("expected non-nil registry")
+	}
+	p, _ := reg.Get("code_search")
+	if p.(*tool.CodeSearchProvider).Excluded != nil {
+		t.Error("code_search should have no exclusions without a filter")
+	}
+
+	reg = buildToolRegistry(nil, nil, &rules.FileFilter{Exclude: []string{"docs/**"}})
+	p, _ = reg.Get("code_search")
+	excluded := p.(*tool.CodeSearchProvider).Excluded
+	if excluded == nil || !excluded("docs/a.html") || excluded("src/a.go") {
+		t.Error("code_search should hide paths matching the exclude filter")
 	}
 }
