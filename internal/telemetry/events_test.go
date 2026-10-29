@@ -164,6 +164,31 @@ func TestPrintTraceSummary_WithCacheTokens(t *testing.T) {
 	}
 }
 
+func TestPrintTraceSummary_WithGatewayCost(t *testing.T) {
+	out := captureStdout(t, func() {
+		PrintTraceSummary(TraceSummary{
+			FilesReviewed: 1, CommentsGenerated: 0,
+			InputTokens: 10, OutputTokens: 5, TotalTokens: 15,
+			GatewayCostUSD: 0.94123,
+			Duration:       time.Second,
+		})
+	})
+	want := "[ocr] Summary: 1 file(s) reviewed, 0 comment(s), ~15 token(s) used (input: ~10, output: ~5), gateway cost $0.9412, 1s elapsed\n"
+	if out != want {
+		t.Errorf("PrintTraceSummary output = %q, want %q", out, want)
+	}
+}
+
+func TestPrintTraceSummary_GatewayCostWithoutTokenSplit(t *testing.T) {
+	out := captureStdout(t, func() {
+		PrintTraceSummary(TraceSummary{FilesReviewed: 1, TotalTokens: 15, GatewayCostUSD: 0.5, Duration: time.Second})
+	})
+	want := "[ocr] Summary: 1 file(s) reviewed, 0 comment(s), ~15 token(s) used, gateway cost $0.5000, 1s elapsed\n"
+	if out != want {
+		t.Errorf("PrintTraceSummary output = %q, want %q", out, want)
+	}
+}
+
 func TestPrintTraceSummary_NoTokenDetails(t *testing.T) {
 	out := captureStdout(t, func() {
 		PrintTraceSummary(TraceSummary{

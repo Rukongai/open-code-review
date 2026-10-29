@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/alibaba/open-code-review/internal/agent"
+	"github.com/alibaba/open-code-review/internal/llm"
 	"github.com/alibaba/open-code-review/internal/llmloop"
 	"github.com/alibaba/open-code-review/internal/model"
 )
@@ -196,7 +197,7 @@ func TestOutputJSONWithWarnings_NoCommentsSubtaskError(t *testing.T) {
 	os.Stdout = w
 
 	warnings := []agent.AgentWarning{{Type: "subtask_error", File: "x.go", Message: "fail"}}
-	err := outputJSONWithWarnings(nil, warnings, 1, 10, 5, 15, 0, 0, time.Second, "", nil, nil, "abc123trace", nil, "", nil, false, nil, os.Stdout, nil, nil)
+	err := outputJSONWithWarnings(nil, warnings, 1, 10, 5, 15, 0, 0, time.Second, "", nil, nil, "abc123trace", nil, "", nil, false, nil, os.Stdout, nil, nil, nil)
 	_ = w.Close()
 	os.Stdout = old
 
@@ -316,7 +317,7 @@ func TestOutputJSONWithWarnings(t *testing.T) {
 		Arguments:      `{"path":"missing.go"}`,
 		Error:          "file not found",
 	}}
-	err := outputJSONWithWarnings(comments, warnings, 5, 100, 50, 150, 10, 5, 3*time.Second, "summary", map[string]int64{"file_read": 3}, failures, "trace-xyz-789", nil, "", nil, false, nil, os.Stdout, nil, nil)
+	err := outputJSONWithWarnings(comments, warnings, 5, 100, 50, 150, 10, 5, 3*time.Second, "summary", map[string]int64{"file_read": 3}, failures, "trace-xyz-789", nil, "", nil, false, nil, os.Stdout, nil, nil, nil)
 	_ = w.Close()
 	os.Stdout = old
 
@@ -371,7 +372,7 @@ func TestOutputJSONWithWarnings_NoCommentsNoErrors(t *testing.T) {
 	os.Stdout = w
 
 	warnings := []agent.AgentWarning{{Type: "warning", Message: "something"}}
-	err := outputJSONWithWarnings(nil, warnings, 2, 50, 20, 70, 0, 0, time.Second, "", nil, nil, "", nil, "", nil, false, nil, os.Stdout, nil, nil)
+	err := outputJSONWithWarnings(nil, warnings, 2, 50, 20, 70, 0, 0, time.Second, "", nil, nil, "", nil, "", nil, false, nil, os.Stdout, nil, nil, nil)
 	_ = w.Close()
 	os.Stdout = old
 
@@ -402,7 +403,7 @@ func TestOutputJSONWithWarnings_NoCommentsWithReviewLimitReached(t *testing.T) {
 	}}
 	got := captureStdout(t, func() {
 		err := outputJSONWithWarnings(nil, warnings, 1, 40_000, 0, 40_000, 0, 0,
-			time.Second, "", nil, nil, "trace-1", nil, "sess-1", nil, false, nil, os.Stdout, nil, nil)
+			time.Second, "", nil, nil, "trace-1", nil, "sess-1", nil, false, nil, os.Stdout, nil, nil, nil)
 		if err != nil {
 			t.Fatalf("outputJSONWithWarnings: %v", err)
 		}
@@ -881,4 +882,33 @@ func decodeSinglePreviewJSON(t *testing.T, s string) model.Preview {
 		t.Errorf("expected EOF after the first JSON value, got err=%v\nstdout was:\n%q", err, s)
 	}
 	return got
+}
+
+func TestOutputJSONWithWarnings_GatewayCost(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cost *llm.GatewayCost
+		want string
+	}{
+		{"reported", &llm.GatewayCost{TotalUSD: 0.5, Responses: 2, ByTaskUSD: map[string]float64{"main_task": 0.5}}, `"gateway_cost":{"total_usd":0.5,"responses":2,"by_task_usd":{"main_task":0.5}}`},
+		{"absent", nil, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := outputJSONWithWarnings(nil, nil, 1, 10, 5, 15, 0, 0, time.Second, "", nil, nil, "", nil, "", nil, false, nil, &buf, nil, tc.cost, nil); err != nil {
+				t.Fatal(err)
+			}
+			var compact bytes.Buffer
+			if err := json.Compact(&compact, buf.Bytes()); err != nil {
+				t.Fatal(err)
+			}
+			has := bytes.Contains(compact.Bytes(), []byte(`"gateway_cost"`))
+			if tc.want == "" && has {
+				t.Errorf("gateway_cost present without a cost: %s", compact.String())
+			}
+			if tc.want != "" && !bytes.Contains(compact.Bytes(), []byte(tc.want)) {
+				t.Errorf("output missing %s: %s", tc.want, compact.String())
+			}
+		})
+	}
 }

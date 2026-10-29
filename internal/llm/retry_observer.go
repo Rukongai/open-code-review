@@ -32,16 +32,22 @@ func newRetryObserver(collector *RetryCollector) retryObserver {
 		// Identity comes from the context the business layer attached before
 		// calling the SDK. The per-attempt context the SDK builds is derived from
 		// it, so the value is still visible here. Requests without identity —
-		// scan and llm test — go straight through: the collector would drop them
-		// anyway, and skipping the timestamps keeps those paths untouched.
+		// scan and llm test — skip the attempt record, which the collector would
+		// drop anyway, but still contribute any gateway-reported cost.
 		meta, ok := RequestMetaFromContext(req.Context())
-		if collector == nil || !ok {
+		if collector == nil {
 			return next(req)
+		}
+		if !ok {
+			res, err := next(req)
+			recordGatewayCost(collector, "", res)
+			return res, err
 		}
 
 		startedAt := time.Now()
 		res, err := next(req)
 		endedAt := time.Now()
+		recordGatewayCost(collector, meta.TaskType, res)
 
 		collector.RecordAttempt(meta, observeAttempt(res, err, endedAt), startedAt, endedAt)
 		return res, err
@@ -129,4 +135,13 @@ func parseRetryAfterMS(h http.Header, endedAt time.Time) int64 {
 		}
 	}
 	return 0
+}
+
+func recordGatewayCost(collector *RetryCollector, taskType string, res *http.Response) {
+	if res == nil {
+		return
+	}
+	if cost, ok := parseGatewayCost(res.Header); ok {
+		collector.RecordGatewayCost(taskType, cost)
+	}
 }

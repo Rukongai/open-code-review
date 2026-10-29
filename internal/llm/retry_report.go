@@ -261,6 +261,7 @@ func (e *requestEntry) hasErrorAttempt() bool {
 type RetryCollector struct {
 	mu      sync.Mutex
 	entries map[RequestMeta]*requestEntry
+	cost    gatewayCostTotals
 }
 
 // NewRetryCollector returns an empty collector.

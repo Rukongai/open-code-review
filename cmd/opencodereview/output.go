@@ -295,6 +295,9 @@ type jsonSummary struct {
 	CacheWriteTokens int64  `json:"cache_write_tokens,omitempty"`
 	Elapsed          string `json:"elapsed"`
 	BudgetExceeded   bool   `json:"budget_exceeded,omitempty"`
+	// GatewayCost is the spend an LLM gateway such as LiteLLM reported per
+	// response; omitted when the endpoint reports none.
+	GatewayCost *llm.GatewayCost `json:"gateway_cost,omitempty"`
 }
 
 type jsonToolCalls struct {
@@ -374,7 +377,7 @@ func outputJSONWithWarnings(comments []model.LlmComment, warnings []agent.AgentW
 	duration time.Duration, projectSummary string, toolCalls map[string]int64, toolFailures []llmloop.ToolFailureDetail,
 	traceID string, resumeInfo *agent.ResumeInfo, sessionID string,
 	manifest *session.RunManifest, budgetExceeded bool, llmIdentity *jsonLLMIdentity, out io.Writer,
-	retryReport *llm.RetryReport, groups []agent.FileGroupInfo) error {
+	retryReport *llm.RetryReport, gatewayCost *llm.GatewayCost, groups []agent.FileGroupInfo) error {
 	publishedWarnings := warningsForOutput(warnings, manifest)
 	payload := jsonOutput{
 		Status:   "success",
@@ -391,6 +394,7 @@ func outputJSONWithWarnings(comments []model.LlmComment, warnings []agent.AgentW
 			CacheWriteTokens: cacheWriteTokens,
 			Elapsed:          duration.Round(time.Second).String(),
 			BudgetExceeded:   budgetExceeded,
+			GatewayCost:      gatewayCost,
 		},
 		Groups:         groups,
 		ProjectSummary: projectSummary,
@@ -688,7 +692,7 @@ func outputJSONNoFiles(traceID string, llmIdentity *jsonLLMIdentity, out io.Writ
 // exactly one of them. Pass the frozen report here only when the normal exit
 // was skipped, so the report is never duplicated and never silently dropped.
 func emitFailureUsage(ag ResultProvider, duration time.Duration, outputFormat string, llmIdentity *jsonLLMIdentity,
-	retryReport *llm.RetryReport) {
+	retryReport *llm.RetryReport, gatewayCost *llm.GatewayCost) {
 	toolCallSummary := newJSONToolCalls(ag.ToolCalls(), ag.ToolFailures())
 	toolTotal := toolCallSummary.Total
 	budgetExceeded := ag.BudgetExceeded()
@@ -705,6 +709,7 @@ func emitFailureUsage(ag ResultProvider, duration time.Duration, outputFormat st
 				CacheWriteTokens: ag.TotalCacheWriteTokens(),
 				Elapsed:          duration.Round(time.Second).String(),
 				BudgetExceeded:   budgetExceeded,
+				GatewayCost:      gatewayCost,
 			},
 			ToolCalls:   toolCallSummary,
 			SessionID:   ag.SessionID(),
@@ -723,6 +728,9 @@ func emitFailureUsage(ag ResultProvider, duration time.Duration, outputFormat st
 	}
 	fmt.Fprintf(os.Stderr, ", elapsed %s, budget_exceeded=%v",
 		duration.Round(time.Second).String(), budgetExceeded)
+	if gatewayCost != nil {
+		fmt.Fprintf(os.Stderr, ", gateway cost $%.4f", gatewayCost.TotalUSD)
+	}
 	if id := ag.SessionID(); id != "" {
 		fmt.Fprintf(os.Stderr, ", session %s", id)
 	}
