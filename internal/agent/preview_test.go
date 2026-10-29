@@ -44,7 +44,7 @@ func TestWhyExcluded_BinaryFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := agent.whyExcluded(tt.diff)
+			got, _ := agent.whyExcluded(tt.diff)
 			if got != tt.expected {
 				t.Errorf("whyExcluded() = %v, want %v", got, tt.expected)
 			}
@@ -89,7 +89,7 @@ func TestWhyExcluded_UserExcludePattern(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := agent.whyExcluded(tt.diff)
+			got, _ := agent.whyExcluded(tt.diff)
 			if got != tt.expected {
 				t.Errorf("whyExcluded() = %v, want %v", got, tt.expected)
 			}
@@ -151,7 +151,7 @@ func TestWhyExcluded_ExtensionFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := agent.whyExcluded(tt.diff)
+			got, _ := agent.whyExcluded(tt.diff)
 			if got != tt.expected {
 				t.Errorf("whyExcluded() = %v, want %v", got, tt.expected)
 			}
@@ -199,7 +199,7 @@ func TestWhyExcluded_DefaultPathFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := agent.whyExcluded(tt.diff)
+			got, _ := agent.whyExcluded(tt.diff)
 			if got != tt.expected {
 				t.Errorf("whyExcluded() = %v, want %v", got, tt.expected)
 			}
@@ -295,7 +295,7 @@ func TestWhyExcluded_UserIncludePattern(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := agent.whyExcluded(tt.diff)
+			got, _ := agent.whyExcluded(tt.diff)
 			if got != tt.expected {
 				t.Errorf("whyExcluded() = %q, want %q", got, tt.expected)
 			}
@@ -336,7 +336,7 @@ func TestWhyExcluded_IncludeBypassesDefaultPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := agent.whyExcluded(tt.diff)
+			got, _ := agent.whyExcluded(tt.diff)
 			if got != tt.expected {
 				t.Errorf("whyExcluded() = %q, want %q", got, tt.expected)
 			}
@@ -384,7 +384,7 @@ func TestWhyExcluded_IncludeAndExcludeInteraction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := agent.whyExcluded(tt.diff)
+			got, _ := agent.whyExcluded(tt.diff)
 			if got != tt.expected {
 				t.Errorf("whyExcluded() = %q, want %q", got, tt.expected)
 			}
@@ -405,7 +405,7 @@ func TestWhyExcluded_PriorityOrder(t *testing.T) {
 		IsBinary: true,
 	}
 
-	got := agent.whyExcluded(diff)
+	got, _ := agent.whyExcluded(diff)
 	if got != ExcludeBinary {
 		t.Errorf("whyExcluded() = %v, want %v (binary should be checked first)", got, ExcludeBinary)
 	}
@@ -495,7 +495,7 @@ func TestWhyExcluded_SecretPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			agent := New(Args{FileFilter: tt.filter})
-			got := agent.whyExcluded(model.Diff{NewPath: tt.path})
+			got, _ := agent.whyExcluded(model.Diff{NewPath: tt.path})
 			if got != tt.expected {
 				t.Errorf("whyExcluded(%q) = %q, want %q", tt.path, got, tt.expected)
 			}
@@ -515,7 +515,7 @@ func TestWhyExcluded_SecretRename(t *testing.T) {
 		NewPath: ".env.example",
 	}
 
-	if got := agent.whyExcluded(diff); got != ExcludeSecret {
+	if got, _ := agent.whyExcluded(diff); got != ExcludeSecret {
 		t.Fatalf("whyExcluded() = %q, want %q", got, ExcludeSecret)
 	}
 }

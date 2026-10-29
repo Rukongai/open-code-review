@@ -198,7 +198,7 @@ func TestOutputJSONWithWarnings_NoCommentsSubtaskError(t *testing.T) {
 	os.Stdout = w
 
 	warnings := []agent.AgentWarning{{Type: "subtask_error", File: "x.go", Message: "fail"}}
-	err := outputJSONWithWarnings(nil, warnings, 1, 10, 5, 15, 0, 0, time.Second, "", nil, nil, "abc123trace", nil, "", nil, false, nil, os.Stdout, nil, nil, nil)
+	err := outputJSONWithWarnings(nil, warnings, 1, 10, 5, 15, 0, 0, time.Second, "", nil, nil, "abc123trace", nil, "", nil, false, nil, os.Stdout, nil, nil, nil, nil)
 	_ = w.Close()
 	os.Stdout = old
 
@@ -318,7 +318,7 @@ func TestOutputJSONWithWarnings(t *testing.T) {
 		Arguments:      `{"path":"missing.go"}`,
 		Error:          "file not found",
 	}}
-	err := outputJSONWithWarnings(comments, warnings, 5, 100, 50, 150, 10, 5, 3*time.Second, "summary", map[string]int64{"file_read": 3}, failures, "trace-xyz-789", nil, "", nil, false, nil, os.Stdout, nil, nil, nil)
+	err := outputJSONWithWarnings(comments, warnings, 5, 100, 50, 150, 10, 5, 3*time.Second, "summary", map[string]int64{"file_read": 3}, failures, "trace-xyz-789", nil, "", nil, false, nil, os.Stdout, nil, nil, nil, nil)
 	_ = w.Close()
 	os.Stdout = old
 
@@ -373,7 +373,7 @@ func TestOutputJSONWithWarnings_NoCommentsNoErrors(t *testing.T) {
 	os.Stdout = w
 
 	warnings := []agent.AgentWarning{{Type: "warning", Message: "something"}}
-	err := outputJSONWithWarnings(nil, warnings, 2, 50, 20, 70, 0, 0, time.Second, "", nil, nil, "", nil, "", nil, false, nil, os.Stdout, nil, nil, nil)
+	err := outputJSONWithWarnings(nil, warnings, 2, 50, 20, 70, 0, 0, time.Second, "", nil, nil, "", nil, "", nil, false, nil, os.Stdout, nil, nil, nil, nil)
 	_ = w.Close()
 	os.Stdout = old
 
@@ -404,7 +404,7 @@ func TestOutputJSONWithWarnings_NoCommentsWithReviewLimitReached(t *testing.T) {
 	}}
 	got := captureStdout(t, func() {
 		err := outputJSONWithWarnings(nil, warnings, 1, 40_000, 0, 40_000, 0, 0,
-			time.Second, "", nil, nil, "trace-1", nil, "sess-1", nil, false, nil, os.Stdout, nil, nil, nil)
+			time.Second, "", nil, nil, "trace-1", nil, "sess-1", nil, false, nil, os.Stdout, nil, nil, nil, nil)
 		if err != nil {
 			t.Fatalf("outputJSONWithWarnings: %v", err)
 		}
@@ -896,7 +896,7 @@ func TestOutputJSONWithWarnings_GatewayCost(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			if err := outputJSONWithWarnings(nil, nil, 1, 10, 5, 15, 0, 0, time.Second, "", nil, nil, "", nil, "", nil, false, nil, &buf, nil, tc.cost, nil); err != nil {
+			if err := outputJSONWithWarnings(nil, nil, 1, 10, 5, 15, 0, 0, time.Second, "", nil, nil, "", nil, "", nil, false, nil, &buf, nil, tc.cost, nil, nil); err != nil {
 				t.Fatal(err)
 			}
 			var compact bytes.Buffer
@@ -911,5 +911,21 @@ func TestOutputJSONWithWarnings_GatewayCost(t *testing.T) {
 				t.Errorf("output missing %s: %s", tc.want, compact.String())
 			}
 		})
+	}
+}
+
+func TestOutputJSONWithWarnings_Excluded(t *testing.T) {
+	var buf bytes.Buffer
+	excluded := []agent.ExcludedFile{{Path: "docs/a.md", Reason: agent.ExcludeUserRule, Rule: "docs/**"}}
+	if err := outputJSONWithWarnings(nil, nil, 1, 10, 5, 15, 0, 0, time.Second, "", nil, nil, "", nil, "", nil, false, nil, &buf, nil, nil, nil, excluded); err != nil {
+		t.Fatal(err)
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, buf.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	want := `"excluded":[{"path":"docs/a.md","reason":"user_exclude","rule":"docs/**"}]`
+	if !bytes.Contains(compact.Bytes(), []byte(want)) {
+		t.Errorf("output missing %s: %s", want, compact.String())
 	}
 }

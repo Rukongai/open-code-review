@@ -89,12 +89,18 @@ func IsAllowedExt(ext string) bool {
 //	"*_test.go"          matches "foo_test.go" only (no directory traversal)
 //	"**/*.test.{js,ts}"  matches "src/app.test.js", "lib/util.test.ts"
 func IsExcludedPath(path string) bool {
+	return ExcludedPathPattern(path) != ""
+}
+
+// ExcludedPathPattern returns the default exclude pattern that matches path,
+// or "" when none does.
+func ExcludedPathPattern(path string) string {
 	excludeOnce.Do(initExclude)
 	lowerPath := strings.ToLower(path)
 	for _, pattern := range excludePatterns {
 		if matched, _ := doublestar.Match(pattern, lowerPath); matched {
-			return true
+			return pattern
 		}
 	}
-	return false
+	return ""
 }
