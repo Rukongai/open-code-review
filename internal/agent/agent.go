@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"runtime/debug"
 	"slices"
 	"sort"
@@ -35,6 +36,7 @@ import (
 	"github.com/alibaba/open-code-review/internal/stdout"
 	"github.com/alibaba/open-code-review/internal/telemetry"
 	"github.com/alibaba/open-code-review/internal/tool"
+	"github.com/alibaba/open-code-review/internal/triage"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -165,6 +167,15 @@ type Args struct {
 	// LLM endpoint and app config; a zero value simply omits those fields from
 	// the hash input.
 	RuntimeConfig RuntimeConfig
+
+	// Triage, when set, classifies each group before review; a light group
+	// skips the plan phase and gets a single main round.
+	Triage GroupTriager
+}
+
+// GroupTriager classifies a group's concatenated diff by review effort.
+type GroupTriager interface {
+	Classify(ctx context.Context, diff string) (triage.Result, error)
 }
 
 // RuntimeConfig captures the allowlisted, non-secret runtime settings that
@@ -1402,8 +1413,10 @@ func (a *Agent) executeGroupSubtask(ctx context.Context, g FileGroup) (bool, *su
 	// Merge system rules for all files in the group
 	rule := a.resolveGroupSystemRule(g.Diffs)
 
+	light := a.triageGroupIsLight(ctx, groupKey, concatenatedDiffs)
+
 	// Phase 1: Plan (skip when changes are below threshold)
-	planEnabled := a.args.Template.PlanTask != nil && len(a.args.Template.PlanTask.Messages) > 0
+	planEnabled := a.args.Template.PlanTask != nil && len(a.args.Template.PlanTask.Messages) > 0 && !light
 	planRequired := a.args.Template.PlanRequired(len(g.Diffs), totalChanged, maxFileChanged)
 
 	var planResult string
@@ -1437,6 +1450,9 @@ func (a *Agent) executeGroupSubtask(ctx context.Context, g FileGroup) (bool, *su
 	}
 
 	maxRounds := a.args.Template.ReviewRounds()
+	if light {
+		maxRounds = 1
+	}
 
 	// Per-path baselines for concurrency-safe round-delta computation.
 	baseline := make(map[string]int, len(g.Diffs))
@@ -1558,6 +1574,29 @@ func (a *Agent) executeGroupSubtask(ctx context.Context, g FileGroup) (bool, *su
 		return false, lastStop, nil
 	}
 	return completed, nil, nil
+}
+
+// triageGroupIsLight reports whether triage judged the group low-risk. Any
+// triage failure means a full review, so triage can only ever remove effort
+// from groups it has positively classified.
+func (a *Agent) triageGroupIsLight(ctx context.Context, groupKey, diff string) bool {
+	if a.args.Triage == nil {
+		return false
+	}
+	res, err := a.args.Triage.Classify(ctx, diff)
+	// Triage decisions go to stderr because --audience agent silences progress
+	// output, and the tier per group is what an evaluation needs to see.
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[ocr] Triage failed for group %q: %v (reviewing in full)\n", groupKey, err)
+		return false
+	}
+	fmt.Fprintf(os.Stderr, "[ocr] Triage group %q: %s (skip %.2f, light %.2f, deep %.2f, has_issue %.2f, %d input tokens)\n",
+		groupKey, res.Tier, res.PSkip, res.PLight, res.PDeep, res.HasIssue, res.InputTokens)
+	telemetry.Event(ctx, "triage.classified",
+		telemetry.AnyToAttr("group.label", groupKey),
+		telemetry.AnyToAttr("tier", string(res.Tier)),
+		telemetry.AnyToAttr("p_deep", res.PDeep))
+	return res.Tier == triage.Light
 }
 
 // filterTools defines the two mutually exclusive tools for the review filter.
