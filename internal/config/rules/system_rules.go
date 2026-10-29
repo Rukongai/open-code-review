@@ -231,16 +231,22 @@ func (f *FileFilter) HasInclude() bool {
 // IsUserExcluded reports whether the given path matches any user exclude pattern.
 // The check is case-insensitive: both path and pattern are lowercased.
 func (f *FileFilter) IsUserExcluded(path string) bool {
+	return f.UserExcludePattern(path) != ""
+}
+
+// UserExcludePattern returns the configured exclude pattern, as written, that
+// matches path, or "" when none does.
+func (f *FileFilter) UserExcludePattern(path string) string {
 	lowerPath := strings.ToLower(path)
 	for _, pattern := range f.Exclude {
 		expanded := expandBraces(pattern)
 		for _, p := range expanded {
 			if matched, _ := doublestar.Match(strings.ToLower(p), lowerPath); matched {
-				return true
+				return pattern
 			}
 		}
 	}
-	return false
+	return ""
 }
 
 // IsUserIncluded reports whether the given path matches any user include pattern.

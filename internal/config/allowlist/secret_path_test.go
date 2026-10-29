@@ -95,3 +95,15 @@ func TestIsSecretPath(t *testing.T) {
 		})
 	}
 }
+
+func TestSecretPathPattern(t *testing.T) {
+	if got := SecretPathPattern("deploy/.env.local"); got != ".env*" {
+		t.Errorf("SecretPathPattern(dotenv) = %q", got)
+	}
+	if got := SecretPathPattern(".env.example"); got != "" {
+		t.Errorf("SecretPathPattern(.env.example) = %q, want empty", got)
+	}
+	if got := SecretPathPattern("main.go"); got != "" {
+		t.Errorf("SecretPathPattern(main.go) = %q, want empty", got)
+	}
+}

@@ -4,6 +4,8 @@
 package agent
 
 import (
+	"fmt"
+
 	allowedext "github.com/alibaba/open-code-review/internal/config/allowlist"
 	"github.com/alibaba/open-code-review/internal/llm"
 	"github.com/alibaba/open-code-review/internal/llmloop"
@@ -17,6 +19,9 @@ type fileDecision struct {
 	Diff       model.Diff
 	Reason     ExcludeReason
 	DiffTokens int
+	// Rule is what triggered Reason: the matching pattern, the extension, or
+	// the token limit. Empty for reasons with nothing more specific to name.
+	Rule string
 }
 
 // selected reports whether the file enters the review's selected set — the
@@ -44,7 +49,8 @@ func (a *Agent) selectFiles(diffs []model.Diff) []fileDecision {
 	limit := llmloop.PromptTokenLimit(a.args.Template.MaxTokens)
 	decisions := make([]fileDecision, 0, len(diffs))
 	for _, d := range diffs {
-		dec := fileDecision{Diff: d, Reason: a.whyExcluded(d)}
+		reason, rule := a.whyExcluded(d)
+		dec := fileDecision{Diff: d, Reason: reason, Rule: rule}
 		switch {
 		case dec.Reason != ExcludeNone:
 		case d.IsDeleted:
@@ -55,6 +61,7 @@ func (a *Agent) selectFiles(diffs []model.Diff) []fileDecision {
 			dec.DiffTokens = llm.CountTokens(d.Diff)
 			if dec.DiffTokens > limit {
 				dec.Reason = ExcludeTooLarge
+				dec.Rule = fmt.Sprintf("diff ~%d tokens exceeds limit %d", dec.DiffTokens, limit)
 			}
 		}
 		decisions = append(decisions, dec)
@@ -64,12 +71,13 @@ func (a *Agent) selectFiles(diffs []model.Diff) []fileDecision {
 
 // whyExcluded applies the static gates — binary, the built-in secret paths,
 // user exclude/include, then the extension allowlist and default-path patterns
-// — and returns the specific reason a file is excluded, or ExcludeNone when it
-// survives all of them. It answers only what the path and the diff header say;
-// the size gate lives in selectFiles because it needs the resolved token limit.
-func (a *Agent) whyExcluded(d model.Diff) ExcludeReason {
+// — and returns the specific reason a file is excluded, with the rule that
+// matched, or ExcludeNone when it survives all of them. It answers only what the
+// path and the diff header say; the size gate lives in selectFiles because it
+// needs the resolved token limit.
+func (a *Agent) whyExcluded(d model.Diff) (ExcludeReason, string) {
 	if d.IsBinary {
-		return ExcludeBinary
+		return ExcludeBinary, ""
 	}
 
 	path := effectivePath(d)
@@ -77,28 +85,53 @@ func (a *Agent) whyExcluded(d model.Diff) ExcludeReason {
 
 	// Ahead of both user rules: no include glob can admit a credential path,
 	// and no user exclude can claim it under a different reason.
-	if allowedext.IsSecretPath(d.OldPath) || allowedext.IsSecretPath(d.NewPath) {
-		return ExcludeSecret
+	if rule := allowedext.SecretPathPattern(d.OldPath); rule != "" {
+		return ExcludeSecret, rule
+	}
+	if rule := allowedext.SecretPathPattern(d.NewPath); rule != "" {
+		return ExcludeSecret, rule
 	}
 
-	if f != nil && f.IsUserExcluded(path) {
-		return ExcludeUserRule
+	if f != nil {
+		if rule := f.UserExcludePattern(path); rule != "" {
+			return ExcludeUserRule, rule
+		}
 	}
 
 	if f != nil && f.HasInclude() && f.IsUserIncluded(path) {
-		return ExcludeNone
+		return ExcludeNone, ""
 	}
 
 	ext := a.extFromPath(path)
 	if ext != "" && !allowedext.IsAllowedExt(ext) {
-		return ExcludeExtension
+		return ExcludeExtension, ext
 	}
 
-	if allowedext.IsExcludedPath(path) {
-		return ExcludeDefaultPath
+	if rule := allowedext.ExcludedPathPattern(path); rule != "" {
+		return ExcludeDefaultPath, rule
 	}
 
-	return ExcludeNone
+	return ExcludeNone, ""
+}
+
+// ExcludedFile is one changed file the review did not cover, for JSON output.
+type ExcludedFile struct {
+	Path   string        `json:"path"`
+	Reason ExcludeReason `json:"reason"`
+	Rule   string        `json:"rule,omitempty"`
+}
+
+// excludedFiles lists every decision that kept a file out of review, in input
+// order.
+func excludedFiles(decisions []fileDecision) []ExcludedFile {
+	var out []ExcludedFile
+	for _, dec := range decisions {
+		if dec.selected() {
+			continue
+		}
+		out = append(out, ExcludedFile{Path: effectivePath(dec.Diff), Reason: dec.Reason, Rule: dec.Rule})
+	}
+	return out
 }
 
 // selectionCounts is the run-level rollup of one selection pass.

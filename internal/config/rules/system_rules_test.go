@@ -2112,3 +2112,13 @@ func TestLoadGlobalRule(t *testing.T) {
 		}
 	})
 }
+
+func TestUserExcludePattern(t *testing.T) {
+	f := &FileFilter{Exclude: []string{"Docs/**", "**/*.{md,txt}"}}
+	cases := map[string]string{"docs/a.go": "Docs/**", "x/README.md": "**/*.{md,txt}", "main.go": ""}
+	for path, want := range cases {
+		if got := f.UserExcludePattern(path); got != want {
+			t.Errorf("UserExcludePattern(%q) = %q, want %q", path, got, want)
+		}
+	}
+}

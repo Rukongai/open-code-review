@@ -207,6 +207,7 @@ type Agent struct {
 	budgetExceeded  atomic.Bool // set when a token/tool-call budget gate stopped dispatch
 
 	fileGroups []FileGroup // semantic grouping result, stored for JSON output
+	excluded   []ExcludedFile
 
 	// inputResolution holds this run's frozen commit endpoints (resolved_base/
 	// head/exact_range), and repoRemoteIdentity the credential-free repository
@@ -342,6 +343,7 @@ func (a *Agent) Run(ctx context.Context) ([]model.LlmComment, error) {
 	fmt.Fprintf(stdout.Writer(), "[ocr] %d file(s) changed, reviewing %d in %s\n", totalChanged, reviewCount, a.args.RepoDir)
 
 	a.logExclusions(decisions)
+	a.excluded = excludedFiles(decisions)
 	a.diffs = kept
 
 	// One run-level skip signal, keyed on the selected set rather than on what
@@ -496,6 +498,12 @@ func (a *Agent) FilesReviewed() int64 {
 // Diffs returns the parsed diffs loaded by the agent.
 func (a *Agent) Diffs() []model.Diff {
 	return a.diffs
+}
+
+// ExcludedFiles returns the changed files this run did not review, each with
+// the reason and the rule that excluded it.
+func (a *Agent) ExcludedFiles() []ExcludedFile {
+	return a.excluded
 }
 
 // FileGroups returns the semantic grouping result for JSON output.
