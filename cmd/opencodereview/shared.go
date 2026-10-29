@@ -810,6 +810,7 @@ func emitRunResult(
 	llmIdentity *jsonLLMIdentity,
 	out io.Writer,
 	retryReport *llm.RetryReport,
+	gatewayCost *llm.GatewayCost,
 ) error {
 	outputFormat = strings.ToLower(strings.TrimSpace(outputFormat))
 	comments = diff.ResolveLineNumbers(comments, ag.Diffs())
@@ -851,6 +852,7 @@ func emitRunResult(
 			CacheWriteTokens:  ag.TotalCacheWriteTokens(),
 			Duration:          duration,
 			SessionID:         ag.SessionID(),
+			GatewayCostUSD:    gatewayCost.Total(),
 		})
 	}
 
@@ -866,7 +868,7 @@ func emitRunResult(
 		return outputJSONWithWarnings(comments, ag.Warnings(), ag.FilesReviewed(),
 			ag.TotalInputTokens(), ag.TotalOutputTokens(), ag.TotalTokensUsed(),
 			ag.TotalCacheReadTokens(), ag.TotalCacheWriteTokens(), duration,
-			ag.ProjectSummary(), ag.ToolCalls(), ag.ToolFailures(), traceID, resumeInfo, ag.SessionID(), manifest, ag.BudgetExceeded(), llmIdentity, out, retryReport, groups)
+			ag.ProjectSummary(), ag.ToolCalls(), ag.ToolFailures(), traceID, resumeInfo, ag.SessionID(), manifest, ag.BudgetExceeded(), llmIdentity, out, retryReport, gatewayCost, groups)
 	}
 	if outputFormat == "sarif" {
 		return outputSARIF(comments, Version, ag.Warnings(), manifest, out)

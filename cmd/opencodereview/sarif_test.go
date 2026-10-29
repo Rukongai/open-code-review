@@ -118,7 +118,7 @@ func TestOutputSARIF_EmptyComments(t *testing.T) {
 func TestEmitRunResult_SarifNoFiles(t *testing.T) {
 	ag := &mockResultProvider{filesReviewed: 0}
 	out := captureStdout(t, func() {
-		if err := emitRunResult(context.Background(), ag, nil, time.Now(), "sarif", "developer", nil, nil, os.Stdout, nil); err != nil {
+		if err := emitRunResult(context.Background(), ag, nil, time.Now(), "sarif", "developer", nil, nil, os.Stdout, nil, nil); err != nil {
 			t.Fatalf("emitRunResult: %v", err)
 		}
 	})
@@ -382,7 +382,7 @@ func TestEmitRunResult_Sarif(t *testing.T) {
 		{Path: "main.go", Content: "nil deref", StartLine: 10, EndLine: 10, Category: "bug", Severity: "critical"},
 	}
 	out := captureStdout(t, func() {
-		if err := emitRunResult(context.Background(), ag, comments, time.Now(), "sarif", "developer", nil, nil, os.Stdout, nil); err != nil {
+		if err := emitRunResult(context.Background(), ag, comments, time.Now(), "sarif", "developer", nil, nil, os.Stdout, nil, nil); err != nil {
 			t.Fatalf("emitRunResult: %v", err)
 		}
 	})
