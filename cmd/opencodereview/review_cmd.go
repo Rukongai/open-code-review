@@ -300,7 +300,7 @@ func executeReviewContext(ctx context.Context, opts reviewOptions) (retErr error
 	var emitErr error
 	emitted := manifest != nil || runErr == nil
 	if emitted {
-		emitErr = emitRunResult(runCtx, ag, comments, startTime, opts.outputFormat, opts.audience, q, llmIdentity, out, retryReport)
+		emitErr = emitRunResult(runCtx, ag, comments, startTime, opts.outputFormat, opts.audience, q, llmIdentity, out, retryReport, rt.RetryCollector.GatewayCost())
 		if emitErr != nil {
 			emitErr = fmt.Errorf("emit review result: %w", emitErr)
 		} else {
@@ -319,7 +319,7 @@ func executeReviewContext(ctx context.Context, opts reviewOptions) (retErr error
 		if emitted {
 			failureReport = nil
 		}
-		emitFailureUsage(ag, time.Since(startTime), opts.outputFormat, llmIdentity, failureReport)
+		emitFailureUsage(ag, time.Since(startTime), opts.outputFormat, llmIdentity, failureReport, rt.RetryCollector.GatewayCost())
 		if id := ag.SessionID(); id != "" {
 			fmt.Fprintf(os.Stderr, "[ocr] Session: %s (retry with: --resume %s)\n", id, id)
 		}
