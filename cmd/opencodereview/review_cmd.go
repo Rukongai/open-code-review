@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/alibaba/open-code-review/internal/agent"
+	"github.com/alibaba/open-code-review/internal/config/rules"
 	"github.com/alibaba/open-code-review/internal/diff"
 	"github.com/alibaba/open-code-review/internal/llm"
 	"github.com/alibaba/open-code-review/internal/mcp"
@@ -216,7 +217,7 @@ func executeReviewContext(ctx context.Context, opts reviewOptions) (retErr error
 		Ref:     fileReadRef(mode, opts, sealedInput),
 		Runner:  cc.GitRunner,
 	}
-	tools := buildToolRegistry(rt.Collector, fileReader)
+	tools := buildToolRegistry(rt.Collector, fileReader, cc.FileFilter)
 
 	mcpClients := initMCPClients(ctx, rt.AppCfg, tools, cc.RepoDir, Version)
 	defer closeReviewMCPClients(mcpClients)
@@ -628,12 +629,16 @@ var closeReviewMCPClients = func(clients []*mcp.Client) {
 	}
 }
 
-func buildToolRegistry(collector *tool.CommentCollector, fr *tool.FileReader) *tool.Registry {
+func buildToolRegistry(collector *tool.CommentCollector, fr *tool.FileReader, filter *rules.FileFilter) *tool.Registry {
 	reg := tool.NewRegistry()
 	reg.Register(tool.NewFileRead(fr))
 	reg.Register(tool.NewFileFind(fr))
 	reg.Register(tool.NewFileReadDiff(tool.DiffMap{}))
-	reg.Register(tool.NewCodeSearch(fr))
+	search := tool.NewCodeSearch(fr)
+	if filter != nil && len(filter.Exclude) > 0 {
+		search.Excluded = filter.IsUserExcluded
+	}
+	reg.Register(search)
 	reg.Register(&tool.CodeCommentProvider{Collector: collector})
 	return reg
 }
