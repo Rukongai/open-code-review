@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/alibaba/open-code-review/internal/gitcmd"
 )
@@ -820,4 +821,124 @@ func TestBuildGrepArgs_NoIndex(t *testing.T) {
 	assertContains(t, args, "--no-index")
 	assertContains(t, args, "--exclude-standard")
 	assertNotContains(t, args, "--untracked")
+}
+
+func setupLongLineRepo(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := setupTestRepo(t)
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command("git", "add", ".")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v\n%s", err, out)
+	}
+	return dir
+}
+
+func TestGitGrep_LongLineShowsWindowAroundMatch(t *testing.T) {
+	line := strings.Repeat("a", 300_000) + "NEEDLE" + strings.Repeat("b", 200_000)
+	dir := setupLongLineRepo(t, map[string]string{"docs/export.html": "<html>\n" + line + "\n"})
+	p := NewCodeSearch(&FileReader{RepoDir: dir, Mode: ModeWorkspace})
+
+	result, err := p.gitGrep(context.Background(), "needle", false, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) > 4096 {
+		t.Fatalf("result is %d bytes, want a short window", len(result))
+	}
+	for _, want := range []string{
+		"2|…[299700 bytes before] ",
+		"NEEDLE",
+		"line is 500006 bytes; showing bytes 299701-300306",
+		"start_line=2, end_line=2, start_col=299701",
+	} {
+		if !strings.Contains(result, want) {
+			t.Errorf("result missing %q:\n%s", want, result)
+		}
+	}
+}
+
+func TestWindowMatchLine(t *testing.T) {
+	short := "func Hello() {}"
+	if got := windowMatchLine(short, 1, nil); got != short {
+		t.Errorf("short line changed: %q", got)
+	}
+
+	long := strings.Repeat("x", 5000)
+	got := windowMatchLine(long, 7, nil)
+	if !strings.HasPrefix(got, strings.Repeat("x", gitGrepMaxLineBytes)+" …[line is 5000 bytes; showing bytes 1-2048;") {
+		t.Errorf("no-locator fallback should show the line start, got %q", got[gitGrepMaxLineBytes:])
+	}
+
+	// A match longer than the cap is cut to gitGrepMaxLineBytes from its window start.
+	got = windowMatchLine(long, 7, func(string) []int { return []int{1000, 4000} })
+	if !strings.Contains(got, "showing bytes 701-2748;") {
+		t.Errorf("wide match not capped: %q", got[len(got)-120:])
+	}
+}
+
+func TestWindowMatchLine_KeepsUTF8Intact(t *testing.T) {
+	long := strings.Repeat("\u00e9", 3000) + "NEEDLE" + strings.Repeat("\u00fc", 3000)
+	got := windowMatchLine(long, 1, matchLocator("needle", false, false))
+	if !utf8.ValidString(got) {
+		t.Fatalf("window split a character: %q", got)
+	}
+	if !strings.Contains(got, "NEEDLE") {
+		t.Errorf("window lost the match: %q", got)
+	}
+}
+
+func TestMatchLocator(t *testing.T) {
+	if loc := matchLocator("a.b", true, false)("xxa.b"); loc == nil || loc[0] != 2 {
+		t.Errorf("literal search should match the dot literally, got %v", loc)
+	}
+	if loc := matchLocator("a.b", true, false)("xxaXb"); loc != nil {
+		t.Errorf("literal search matched a regex wildcard: %v", loc)
+	}
+	if loc := matchLocator("Foo", false, false)("a foo"); loc == nil {
+		t.Error("case-insensitive search missed")
+	}
+	if loc := matchLocator("Foo", true, false)("a foo"); loc != nil {
+		t.Errorf("case-sensitive search matched: %v", loc)
+	}
+	if matchLocator(`(?<=a)b`, true, true) != nil {
+		t.Error("PCRE-only syntax should yield no locator")
+	}
+}
+
+func TestGitGrep_HidesExcludedPaths(t *testing.T) {
+	dir := setupLongLineRepo(t, map[string]string{
+		"docs/big.html": "Hello from docs\n",
+		"src/app.go":    "func Hello() {}\n",
+	})
+	p := NewCodeSearch(&FileReader{RepoDir: dir, Mode: ModeWorkspace})
+	p.Excluded = func(path string) bool { return strings.HasPrefix(path, "docs/") }
+
+	result, err := p.gitGrep(context.Background(), "Hello", false, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result, "docs/big.html") {
+		t.Errorf("excluded file shown:\n%s", result)
+	}
+	if !strings.Contains(result, "src/app.go") || !strings.Contains(result, "Note: Hid matches in 1 files excluded from review.") {
+		t.Errorf("unexpected result:\n%s", result)
+	}
+
+	result, err = p.gitGrep(context.Background(), "from docs", false, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != "No matches found outside excluded paths (1 excluded files matched)" {
+		t.Errorf("unexpected result: %s", result)
+	}
 }
