@@ -45,19 +45,25 @@ func initSecret() {
 // A path that is not a secret is not thereby reviewable: it still has to pass
 // the extension allowlist and the default exclude patterns.
 func IsSecretPath(filePath string) bool {
+	return SecretPathPattern(filePath) != ""
+}
+
+// SecretPathPattern returns the built-in secret pattern that matches filePath,
+// or "" when none does. Dotenv files report ".env*", the rule they fall under.
+func SecretPathPattern(filePath string) string {
 	secretOnce.Do(initSecret)
 	lowerPath := strings.ToLower(filePath)
 
 	if isSecretEnvPath(lowerPath) {
-		return true
+		return ".env*"
 	}
 
 	for _, pattern := range secretPatterns {
 		if matched, _ := doublestar.Match(pattern, lowerPath); matched {
-			return true
+			return pattern
 		}
 	}
-	return false
+	return ""
 }
 
 func isSecretEnvPath(lowerPath string) bool {

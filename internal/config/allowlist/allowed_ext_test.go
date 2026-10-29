@@ -581,3 +581,12 @@ func TestIsExcludedPath(t *testing.T) {
 		})
 	}
 }
+
+func TestExcludedPathPattern(t *testing.T) {
+	if got := ExcludedPathPattern("src/App.test.tsx"); got != "**/*.test.{js,jsx,ts,tsx}" {
+		t.Errorf("ExcludedPathPattern = %q", got)
+	}
+	if got := ExcludedPathPattern("src/app.ts"); got != "" {
+		t.Errorf("ExcludedPathPattern(non-test) = %q, want empty", got)
+	}
+}

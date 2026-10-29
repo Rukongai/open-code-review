@@ -338,19 +338,22 @@ type jsonLLMIdentity struct {
 }
 
 type jsonOutput struct {
-	Status         string                `json:"status"`
-	LLM            *jsonLLMIdentity      `json:"llm,omitempty"`
-	TraceID        string                `json:"trace_id,omitempty"`
-	Message        string                `json:"message,omitempty"`
-	Summary        *jsonSummary          `json:"summary,omitempty"`
-	ToolCalls      *jsonToolCalls        `json:"tool_calls"`
-	Comments       []model.LlmComment    `json:"comments"`
-	Groups         []agent.FileGroupInfo `json:"groups,omitempty"`
-	Warnings       []agent.AgentWarning  `json:"warnings,omitempty"`
-	ProjectSummary string                `json:"project_summary,omitempty"`
-	Resume         *agent.ResumeInfo     `json:"resume,omitempty"`
-	SessionID      string                `json:"session_id,omitempty"`
-	Manifest       *session.RunManifest  `json:"manifest,omitempty"`
+	Status    string                `json:"status"`
+	LLM       *jsonLLMIdentity      `json:"llm,omitempty"`
+	TraceID   string                `json:"trace_id,omitempty"`
+	Message   string                `json:"message,omitempty"`
+	Summary   *jsonSummary          `json:"summary,omitempty"`
+	ToolCalls *jsonToolCalls        `json:"tool_calls"`
+	Comments  []model.LlmComment    `json:"comments"`
+	Groups    []agent.FileGroupInfo `json:"groups,omitempty"`
+	// Excluded lists the changed files left out of review, with the reason
+	// and the matching rule, so consumers can show why a file was skipped.
+	Excluded       []agent.ExcludedFile `json:"excluded,omitempty"`
+	Warnings       []agent.AgentWarning `json:"warnings,omitempty"`
+	ProjectSummary string               `json:"project_summary,omitempty"`
+	Resume         *agent.ResumeInfo    `json:"resume,omitempty"`
+	SessionID      string               `json:"session_id,omitempty"`
+	Manifest       *session.RunManifest `json:"manifest,omitempty"`
 	// RetryReport is the frozen LLM retry report (ocr.llm-retry-report/v1).
 	// Reuses llm.RetryReport's own field/tag definitions rather than mirroring
 	// them here, and sits last with omitempty so a first-try-success run emits
@@ -377,7 +380,7 @@ func outputJSONWithWarnings(comments []model.LlmComment, warnings []agent.AgentW
 	duration time.Duration, projectSummary string, toolCalls map[string]int64, toolFailures []llmloop.ToolFailureDetail,
 	traceID string, resumeInfo *agent.ResumeInfo, sessionID string,
 	manifest *session.RunManifest, budgetExceeded bool, llmIdentity *jsonLLMIdentity, out io.Writer,
-	retryReport *llm.RetryReport, gatewayCost *llm.GatewayCost, groups []agent.FileGroupInfo) error {
+	retryReport *llm.RetryReport, gatewayCost *llm.GatewayCost, groups []agent.FileGroupInfo, excluded []agent.ExcludedFile) error {
 	publishedWarnings := warningsForOutput(warnings, manifest)
 	payload := jsonOutput{
 		Status:   "success",
@@ -397,6 +400,7 @@ func outputJSONWithWarnings(comments []model.LlmComment, warnings []agent.AgentW
 			GatewayCost:      gatewayCost,
 		},
 		Groups:         groups,
+		Excluded:       excluded,
 		ProjectSummary: projectSummary,
 		Resume:         resumeInfo,
 		SessionID:      sessionID,
