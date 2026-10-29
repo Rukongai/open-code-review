@@ -22,6 +22,7 @@ import (
 	"github.com/alibaba/open-code-review/internal/session"
 	"github.com/alibaba/open-code-review/internal/telemetry"
 	"github.com/alibaba/open-code-review/internal/tool"
+	"github.com/alibaba/open-code-review/internal/triage"
 	"github.com/spf13/cobra"
 
 	"go.opentelemetry.io/otel/codes"
@@ -253,6 +254,7 @@ func executeReviewContext(ctx context.Context, opts reviewOptions) (retErr error
 		MaxTokensBudget:       int64(opts.maxTokensBudget),
 		SkipFilter:            opts.noFilter,
 		RuntimeConfig:         rt.RuntimeConfig,
+		Triage:                triageFromEnv(),
 	})
 
 	closeRaw := bindRawWriter(rt.RawHolder, cc.RepoDir, ag.Session())
@@ -641,4 +643,13 @@ func buildToolRegistry(collector *tool.CommentCollector, fr *tool.FileReader, fi
 	reg.Register(search)
 	reg.Register(&tool.CodeCommentProvider{Collector: collector})
 	return reg
+}
+
+// triageFromEnv returns a nil interface rather than a typed nil pointer, so
+// the agent's nil check sees triage as off.
+func triageFromEnv() agent.GroupTriager {
+	if c := triage.FromEnv(); c != nil {
+		return c
+	}
+	return nil
 }
