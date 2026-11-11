@@ -11,15 +11,22 @@ and downloads each asset pinned by release tag and SHA-256.
 
 ## Patches
 
-On top of upstream `9b0fab8` (`git describe`: `v1.13.3-1-g9b0fab8`, i.e. one
-commit after upstream `v1.13.3` and 25 commits before `v1.13.7`):
+On top of upstream `v1.13.7` (`b1dcffb`):
 
 | Commit | Change |
 | --- | --- |
-| `3b8b474` | fix(tool): bound long lines in `code_search` and `file_read`, honour excludes |
-| `00edb8f` | feat(agent): experimental Decisions API triage for file groups |
-| `f36118f` | feat(llm): report LiteLLM gateway cost per run |
-| `b835c98` | feat(agent): report excluded files with the rule that matched |
+| `8d4b462` | fix(tool): bound long lines in `code_search` and `file_read`, honour excludes |
+| `75b4445` | feat(agent): experimental Decisions API triage for file groups |
+| `36140b5` | feat(llm): report LiteLLM gateway cost per run |
+| `e51360d` | feat(agent): report excluded files with the rule that matched |
+
+Rebase notes for `v1.13.7`: no textual conflicts. Upstream's runtime refactor
+added golden fixtures under `internal/reviewtask/testdata/equivalence/` that
+snapshot the tool schemas sent to the model, so the long-lines commit now also
+regenerates them (`UPDATE_EQUIVALENCE=1 go test ./internal/reviewtask/`); the
+only fixture change is the new `code_search`/`file_read` descriptions and the
+`start_col` parameter. Regenerate them the same way whenever a patch changes
+`tools.json`.
 
 Above them sit release-plumbing commits only (`ci:` and `docs:`): the
 `prbot-release.yml` workflow, the fork guards listed below, and this file.
@@ -28,9 +35,9 @@ Carry all of them across rebases.
 ## Releases
 
 Tags are `v<upstream>-prbot.<N>`, e.g. `v1.13.7-prbot.1`, where `<upstream>`
-is the upstream release the branch is based on. The base above is not yet
-`v1.13.7`; rebase onto it (see below) before cutting a `v1.13.7-prbot.*` tag,
-or the binaries will report a version whose upstream changes they lack.
+is the upstream release the branch is based on (see Patches). Rebase onto a
+new upstream tag before cutting a tag for it, or the binaries will report a
+version whose upstream changes they lack.
 
 Pushing a tag runs
 `.github/workflows/prbot-release.yml`, which on a single Linux runner:
@@ -77,8 +84,8 @@ the hashes, so replaced assets would fail verification.
 ```sh
 git remote add upstream https://github.com/alibaba/open-code-review.git  # once
 git fetch upstream --tags
-OLD_BASE=9b0fab8  # upstream commit prbot currently sits on (Patches table)
-NEW_BASE=v1.13.7  # upstream tag to move to
+OLD_BASE=v1.13.7  # upstream tag prbot currently sits on (Patches table)
+NEW_BASE=v1.13.8  # upstream tag to move to
 git switch prbot
 git rebase --onto "$NEW_BASE" "$OLD_BASE" prbot
 make check && make test
