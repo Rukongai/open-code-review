@@ -38,7 +38,7 @@ jobs:
     timeout-minutes: 30
     container:
       image: node:24.22.1
-    if: github.event_name == 'pull_request_target'
+    if: github.event_name == 'pull_request_target' && github.repository != 'Rukongai/open-code-review'
     steps:
       # Materialize action.yml + scripts/ into the workspace so the local
       # `uses: ./` action below can be resolved and loaded. For

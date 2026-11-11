@@ -2,7 +2,8 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    # vX.Y.Z-prbot.N tags belong to the Rukongai fork's prbot-release.yml.
+    tags: ['v*', '!v*-prbot.*']
   workflow_dispatch:
 
 permissions:
@@ -13,7 +14,7 @@ jobs:
   # without publishing anything, so a trusted publisher misconfiguration is
   # caught before a tag is cut. Manual runs stop here.
   verify-trusted-publishing:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.repository != 'Rukongai/open-code-review'
     # npm trusted publishing rejects self-hosted runners, so this job and
     # npm-publish are cloud-hosted while the rest of the workflow is not.
     runs-on: ubuntu-latest
@@ -95,7 +96,7 @@ jobs:
           echo "All packages accept trusted publishing from this workflow."
 
   build:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.repository != 'Rukongai/open-code-review'
     runs-on: self-hosted
     timeout-minutes: 15
     container:
