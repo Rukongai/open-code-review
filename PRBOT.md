@@ -11,16 +11,16 @@ and downloads each asset pinned by release tag and SHA-256.
 
 ## Patches
 
-On top of upstream `v1.13.7` (`b1dcffb`):
+On top of upstream `main` at `c469d7a` (`v1.13.7` plus 7 commits, no newer tag yet):
 
 | Commit | Change |
 | --- | --- |
-| `8d4b462` | fix(tool): bound long lines in `code_search` and `file_read`, honour excludes |
-| `75b4445` | feat(agent): experimental Decisions API triage for file groups |
-| `36140b5` | feat(llm): report LiteLLM gateway cost per run |
-| `e51360d` | feat(agent): report excluded files with the rule that matched |
+| `7c08e97` | fix(tool): bound long lines in `code_search` and `file_read`, honour excludes |
+| `2a56c98` | feat(agent): experimental Decisions API triage for file groups |
+| `d2d142d` | feat(llm): report LiteLLM gateway cost per run |
+| `4104d0f` | feat(agent): report excluded files with the rule that matched |
 
-Rebase notes for `v1.13.7`: no textual conflicts. Upstream's runtime refactor
+Rebase notes for `c469d7a`: one conflict, in `manual_e2e_retry_test.go` (upstream moved tool defs into task templates; keep its block and pass the extra `nil` filter to `buildToolRegistry`). Upstream's runtime refactor
 added golden fixtures under `internal/reviewtask/testdata/equivalence/` that
 snapshot the tool schemas sent to the model, so the long-lines commit now also
 regenerates them (`UPDATE_EQUIVALENCE=1 go test ./internal/reviewtask/`); the
