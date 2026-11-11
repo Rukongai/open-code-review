@@ -1,0 +1,89 @@
+name: PRBot Release
+
+# Builds the binaries PRBot bundles and publishes them as a GitHub release of
+# this fork. A manual run is a dry run: it builds and uploads the same files
+# as a workflow artifact but creates no release. See PRBOT.md.
+
+on:
+  push:
+    tags: ['v*-prbot.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version embedded in the dry-run binaries (no release is created)
+        required: true
+        default: v0.0.0-prbot.dryrun
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'Rukongai/open-code-review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Resolve version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = push ]; then
+            VERSION="$GITHUB_REF_NAME"
+            if ! printf '%s' "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+-prbot\.[0-9]+$'; then
+              echo "::error::Tag $VERSION is not of the form vX.Y.Z-prbot.N"
+              exit 1
+            fi
+          else
+            VERSION="$INPUT_VERSION"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Test
+        env:
+          LC_ALL: C
+        run: go test -count=1 ./...
+
+      - name: Build
+        run: make build-all BINARY_NAME=ocr VERSION="$VERSION"
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir release
+          cp dist/ocr-* LICENSE release/
+          cd release
+          shasum -a 256 ocr-* LICENSE > SHA256SUMS
+          shasum -a 256 -c SHA256SUMS
+          file ocr-*
+          ./ocr-linux-amd64 --version | tee /dev/stderr | grep -qF "open-code-review $VERSION "
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ocr-${{ env.VERSION }}
+          path: release/*
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$VERSION" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "$VERSION" \
+            --notes "open-code-review $VERSION for PRBot, built from ${GITHUB_SHA}. Verify downloads against SHA256SUMS."

@@ -19,6 +19,7 @@ permissions:
 
 jobs:
   translation-sync:
+    if: github.repository != 'Rukongai/open-code-review'
     runs-on: self-hosted
     timeout-minutes: 10
     container:
