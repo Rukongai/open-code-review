@@ -1,11 +1,14 @@
 name: PRBot Release
 
 # Builds the binaries PRBot bundles and publishes them as a GitHub release of
-# this fork. A manual run is a dry run: it builds and uploads the same files
-# as a workflow artifact but creates no release. See PRBOT.md.
+# this fork. Only a tag push releases; a push to the prbot branch or a manual
+# run is a dry run that uploads the same files as a workflow artifact. The
+# branch trigger exists because GitHub only dispatches workflows present on
+# the default branch, and main stays a pristine upstream mirror. See PRBOT.md.
 
 on:
   push:
+    branches: [prbot]
     tags: ['v*-prbot.*']
   workflow_dispatch:
     inputs:
@@ -37,11 +40,11 @@ jobs:
 
       - name: Resolve version
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_VERSION: ${{ inputs.version }}
+          REF_TYPE: ${{ github.ref_type }}
+          INPUT_VERSION: ${{ inputs.version || 'v0.0.0-prbot.dryrun' }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = push ]; then
+          if [ "$REF_TYPE" = tag ]; then
             VERSION="$GITHUB_REF_NAME"
             if ! printf '%s' "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+-prbot\.[0-9]+$'; then
               echo "::error::Tag $VERSION is not of the form vX.Y.Z-prbot.N"
@@ -78,7 +81,7 @@ jobs:
           if-no-files-found: error
 
       - name: Create GitHub release
-        if: github.event_name == 'push'
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

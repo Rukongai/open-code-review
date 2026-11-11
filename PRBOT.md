@@ -48,10 +48,14 @@ Pushing a tag runs
 
 `ocr --version` on those binaries prints `open-code-review v1.13.7-prbot.N (<commit>) <os>/<arch>`.
 
-Running the workflow by hand (`gh workflow run prbot-release.yml --ref prbot`)
-is a dry run: it tests, builds and uploads the same files as a workflow
-artifact, and creates no release. The `version` input sets the embedded
-version (default `v0.0.0-prbot.dryrun`).
+Every push to the `prbot` branch is a dry run: it tests, builds and uploads
+the same files as a workflow artifact named `ocr-v0.0.0-prbot.dryrun`, and
+creates no release. A manual run (`gh workflow run prbot-release.yml --ref
+prbot -f version=...`) does the same with a chosen embedded version, but
+GitHub only dispatches workflows that exist on the default branch, so it
+works only if `prbot-release.yml` is on `main` or `prbot` is made the
+default branch; `main` is kept as a pristine upstream mirror, hence the
+branch-push trigger.
 
 ### Cutting the next release
 
