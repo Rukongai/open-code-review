@@ -20,10 +20,10 @@ commit after upstream `v1.13.3` and 25 commits before `v1.13.7`):
 | `00edb8f` | feat(agent): experimental Decisions API triage for file groups |
 | `f36118f` | feat(llm): report LiteLLM gateway cost per run |
 | `b835c98` | feat(agent): report excluded files with the rule that matched |
-| `34d5131` | ci: PRBot release workflow, upstream jobs kept off the fork |
-| _this file_ | docs: PRBOT.md |
 
-The first four are product patches; the rest is release plumbing.
+Above them sit release-plumbing commits only (`ci:` and `docs:`): the
+`prbot-release.yml` workflow, the fork guards listed below, and this file.
+Carry all of them across rebases.
 
 ## Releases
 
